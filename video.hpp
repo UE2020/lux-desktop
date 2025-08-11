@@ -43,10 +43,13 @@ protected:
 
     static int system_event_handler(void* event, void* data);
     void handle_file_transfer_update(const FileTransfer::TransferInfo& transfer);
-    void initiate_file_transfer();
-
+    
 public:
     VideoWindow(int x, int y, int width, int height, ConnectionInfo conn_info);
+    
+    // File transfer methods
+    void send_file();
+    void receive_file();
 
     bool is_connected() const;
     bool is_playing() const;

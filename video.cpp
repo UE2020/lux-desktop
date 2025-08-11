@@ -425,10 +425,6 @@ int VideoWindow::handle(int event) {
                     mouse_manager->lock_mouse();
                 }
                 return 1;
-            } else if (Fl::event_key() == FL_F + 5) {
-                // F5 key pressed - initiate file transfer
-                initiate_file_transfer();
-                return 1;
             } else if (ordered_channel->isOpen()) {
                 json message = {
                     {"type", "keyup"},
@@ -441,18 +437,13 @@ int VideoWindow::handle(int event) {
         break;
 
     case FL_KEYDOWN:
-        if (!conn_info.view_only) {
-            if (Fl::event_key() == FL_F + 5) {
-                // F5 key pressed - handled in keyup
-                return 1;
-            } else if (Fl::event_key() != FL_F + 9 && ordered_channel->isOpen()) {
-                json message = {
-                    {"type", "keydown"},
-                    {"key", fltk_to_browser_key(Fl::event_key())},
-                };
-                ordered_channel->send(message.dump());
-                return 1;
-            }
+        if (!conn_info.view_only && Fl::event_key() != FL_F + 9 && ordered_channel->isOpen()) {
+            json message = {
+                {"type", "keydown"},
+                {"key", fltk_to_browser_key(Fl::event_key())},
+            };
+            ordered_channel->send(message.dump());
+            return 1;
         }
         break;
 
@@ -486,7 +477,7 @@ int VideoWindow::handle(int event) {
     return Fl_Window::handle(event);
 }
 
-void VideoWindow::initiate_file_transfer() {
+void VideoWindow::send_file() {
     if (!file_transfer || !ordered_channel || !ordered_channel->isOpen()) {
         fl_alert("File transfer is not available");
         return;
@@ -494,7 +485,7 @@ void VideoWindow::initiate_file_transfer() {
 
     // Open file chooser dialog
     Fl_Native_File_Chooser chooser;
-    chooser.title("Select File");
+    chooser.title("Select File to Send");
     chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
     
     if (chooser.show() != 0) {
@@ -503,21 +494,16 @@ void VideoWindow::initiate_file_transfer() {
     }
     
     std::string filename = chooser.filename();
-    
-    // Ask user if they want to upload or download
-    int choice = fl_choice("File Transfer", "Cancel", "Upload", "Download", 
-                          "Do you want to upload or download a file?");
-    
-    if (choice == 0) {
-        // User cancelled
+    file_transfer->start_upload(filename);
+}
+
+void VideoWindow::receive_file() {
+    if (!file_transfer || !ordered_channel || !ordered_channel->isOpen()) {
+        fl_alert("File transfer is not available");
         return;
-    } else if (choice == 1) {
-        // Upload
-        file_transfer->start_upload(filename);
-    } else if (choice == 2) {
-        // Download
-        file_transfer->request_download();
     }
+    
+    file_transfer->request_download();
 }
 
 void VideoWindow::handle_file_transfer_update(const FileTransfer::TransferInfo& transfer) {

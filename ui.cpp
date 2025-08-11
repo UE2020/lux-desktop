@@ -184,6 +184,16 @@ MainWindow::MainWindow():
         window->refresh();
     },
         this);
+    menu_bar->add("Transfer/Send File", 0, [](Fl_Widget*, void* data) {
+        auto window = (MainWindow*) data;
+        window->send_file();
+    },
+        this);
+    menu_bar->add("Transfer/Receive File", 0, [](Fl_Widget*, void* data) {
+        auto window = (MainWindow*) data;
+        window->receive_file();
+    },
+        this);
     menu_bar->add("Help/About", 0, [](Fl_Widget*, void*) {
         fl_message("lux-desktop 1.0.0\nCreated by BlueCannonBall\nGPLv3");
     });
@@ -327,6 +337,22 @@ void MainWindow::handle_select_conn() {
         conn_editor->end();
         stage->set_centered(conn_editor);
         stage->end();
+    }
+}
+
+void MainWindow::send_file() {
+    if (video_window && video_window->is_connected()) {
+        video_window->send_file();
+    } else {
+        fl_alert("You must be connected to a remote desktop to transfer files.");
+    }
+}
+
+void MainWindow::receive_file() {
+    if (video_window && video_window->is_connected()) {
+        video_window->receive_file();
+    } else {
+        fl_alert("You must be connected to a remote desktop to transfer files.");
     }
 }
 

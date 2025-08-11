@@ -77,6 +77,10 @@ public:
     MainWindow();
 
     void show() override;
+    
+    // File transfer methods
+    void send_file();
+    void receive_file();
 
 protected:
     Fl_PNG_Image window_icon;
