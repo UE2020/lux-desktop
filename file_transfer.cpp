@@ -25,6 +25,53 @@ void FileTransfer::set_transfer_callback(TransferCallback callback) {
     on_transfer_update = callback;
 }
 
+void FileTransfer::show_progress_window(const TransferInfo& transfer) {
+    std::string title;
+    std::string filename = std::filesystem::path(transfer.filename).filename().string();
+    
+    if (transfer.type == TransferType::Upload) {
+        title = "Uploading File";
+    } else {
+        title = "Downloading File";
+    }
+    
+    auto progress_window = std::make_unique<TransferProgressWindow>(
+        title, filename,
+        [this, id = transfer.id]() {
+            // Cancel callback
+            cancel_transfer(id);
+        }
+    );
+    
+    progress_window->show();
+    progress_windows[transfer.id] = std::move(progress_window);
+}
+
+void FileTransfer::update_progress_window(const TransferInfo& transfer) {
+    auto it = progress_windows.find(transfer.id);
+    if (it == progress_windows.end()) {
+        return;
+    }
+    
+    auto& window = it->second;
+    
+    if (transfer.state == TransferState::Completed) {
+        window->complete();
+    } else if (transfer.state == TransferState::Cancelled) {
+        window->set_status("Transfer cancelled");
+        window->hide();
+        progress_windows.erase(it);
+    } else if (transfer.state == TransferState::Failed) {
+        window->set_status("Transfer failed");
+    } else if (transfer.state == TransferState::InProgress) {
+        float percentage = 0;
+        if (transfer.size > 0) {
+            percentage = (float)transfer.transferred / transfer.size * 100.0f;
+        }
+        window->update_progress(percentage);
+    }
+}
+
 uint32_t FileTransfer::start_upload(const std::string& filename) {
     if (!ordered_channel || !ordered_channel->isOpen()) {
         fl_alert("Cannot start file transfer: Data channel is not open");
@@ -63,6 +110,12 @@ uint32_t FileTransfer::start_upload(const std::string& filename) {
         {"id", transfer_id},
         {"size", file_size}
     };
+    
+    // Get a reference to the transfer for the progress window
+    TransferInfo& transfer = transfers[transfer_id];
+    
+    // Show progress window
+    show_progress_window(transfer);
     
     ordered_channel->send(request.dump());
     return transfer_id;
@@ -118,6 +171,9 @@ void FileTransfer::cancel_transfer(uint32_t id) {
     if (it->second.output_file) {
         it->second.output_file->close();
     }
+    
+    // Update progress window
+    update_progress_window(it->second);
     
     // Notify callback
     if (on_transfer_update) {
@@ -191,6 +247,9 @@ void FileTransfer::process_message(const json& message) {
             
             transfer.state = TransferState::InProgress;
         }
+        
+        // Show progress window
+        show_progress_window(transfer);
         
         // Notify callback
         if (on_transfer_update) {
@@ -269,6 +328,9 @@ void FileTransfer::process_binary(const rtc::binary& message) {
         transfer.output_file->close();
     }
     
+    // Update progress window
+    update_progress_window(transfer);
+    
     // Notify callback
     if (on_transfer_update) {
         on_transfer_update(transfer);
@@ -311,6 +373,9 @@ bool FileTransfer::send_chunk(TransferInfo& transfer, size_t chunk_size) {
     
     // Update transfer progress
     transfer.transferred += bytes_read;
+    
+    // Update progress window
+    update_progress_window(transfer);
     
     // Notify callback
     if (on_transfer_update) {

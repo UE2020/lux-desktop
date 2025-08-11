@@ -10,6 +10,7 @@
 #include <vector>
 #include <rtc/rtc.hpp>
 #include "json.hpp"
+#include "transfer_progress.hpp"
 
 class FileTransfer {
 public:
@@ -46,6 +47,9 @@ private:
     uint32_t next_transfer_id = 1;
     TransferCallback on_transfer_update;
     
+    // Progress window for active transfers
+    std::unordered_map<uint32_t, std::unique_ptr<TransferProgressWindow>> progress_windows;
+    
     // Buffer for sending file chunks
     std::vector<uint8_t> send_buffer;
     
@@ -54,6 +58,12 @@ private:
     
     // Process a received binary message containing file data
     void process_file_data(const rtc::binary& message);
+    
+    // Show progress window for a transfer
+    void show_progress_window(const TransferInfo& transfer);
+    
+    // Update progress window for a transfer
+    void update_progress_window(const TransferInfo& transfer);
 
 public:
     FileTransfer(std::shared_ptr<rtc::DataChannel> ordered_channel);
