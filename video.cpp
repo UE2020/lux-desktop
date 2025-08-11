@@ -2,6 +2,7 @@
 #include "Polyweb/polyweb.hpp"
 // clang-format on
 #include "video.hpp"
+#include "file_transfer.hpp"
 #include "json.hpp"
 #include "keys.hpp"
 #include "media_receiver.hpp"
@@ -63,6 +64,34 @@ VideoWindow::VideoWindow(int x, int y, int width, int height, ConnectionInfo con
                     .unordered = true,
                 },
             });
+            
+        // Initialize file transfer handler
+        file_transfer = std::make_unique<FileTransfer>(ordered_channel);
+        file_transfer->set_transfer_callback([this](const FileTransfer::TransferInfo& transfer) {
+            handle_file_transfer_update(transfer);
+        });
+        
+        // Set up message handler for ordered channel
+        ordered_channel->onMessage([this](rtc::binary message) {
+            // Check if this is a file data message (starts with 4-byte ID)
+            if (message.size() >= 4) {
+                file_transfer->process_binary(message);
+            }
+        }, [this](std::string message) {
+            try {
+                auto json_msg = nlohmann::json::parse(message);
+                
+                // Handle file transfer messages
+                if (json_msg.contains("type") && json_msg["type"].is_string()) {
+                    std::string type = json_msg["type"];
+                    if (type == "transferready" || type == "canceltransfer") {
+                        file_transfer->process_message(json_msg);
+                    }
+                }
+            } catch (const std::exception& e) {
+                // Ignore parsing errors
+            }
+        });
     }
 
     {
@@ -301,6 +330,9 @@ void VideoWindow::hide() {
             mouse_manager.reset();
         }
         keyboard_grab_manager.reset();
+        
+        // Clean up file transfers
+        file_transfer.reset();
     }
 
     video_track->resetCallbacks();
@@ -393,6 +425,10 @@ int VideoWindow::handle(int event) {
                     mouse_manager->lock_mouse();
                 }
                 return 1;
+            } else if (Fl::event_key() == FL_F + 5) {
+                // F5 key pressed - initiate file transfer
+                initiate_file_transfer();
+                return 1;
             } else if (ordered_channel->isOpen()) {
                 json message = {
                     {"type", "keyup"},
@@ -405,13 +441,18 @@ int VideoWindow::handle(int event) {
         break;
 
     case FL_KEYDOWN:
-        if (!conn_info.view_only && Fl::event_key() != FL_F + 9 && ordered_channel->isOpen()) {
-            json message = {
-                {"type", "keydown"},
-                {"key", fltk_to_browser_key(Fl::event_key())},
-            };
-            ordered_channel->send(message.dump());
-            return 1;
+        if (!conn_info.view_only) {
+            if (Fl::event_key() == FL_F + 5) {
+                // F5 key pressed - handled in keyup
+                return 1;
+            } else if (Fl::event_key() != FL_F + 9 && ordered_channel->isOpen()) {
+                json message = {
+                    {"type", "keydown"},
+                    {"key", fltk_to_browser_key(Fl::event_key())},
+                };
+                ordered_channel->send(message.dump());
+                return 1;
+            }
         }
         break;
 
@@ -443,6 +484,77 @@ int VideoWindow::handle(int event) {
         break;
     }
     return Fl_Window::handle(event);
+}
+
+void VideoWindow::initiate_file_transfer() {
+    if (!file_transfer || !ordered_channel || !ordered_channel->isOpen()) {
+        fl_alert("File transfer is not available");
+        return;
+    }
+
+    // Open file chooser dialog
+    Fl_Native_File_Chooser chooser;
+    chooser.title("Select File");
+    chooser.type(Fl_Native_File_Chooser::BROWSE_FILE);
+    
+    if (chooser.show() != 0) {
+        // User cancelled
+        return;
+    }
+    
+    std::string filename = chooser.filename();
+    
+    // Ask user if they want to upload or download
+    int choice = fl_choice("File Transfer", "Cancel", "Upload", "Download", 
+                          "Do you want to upload or download a file?");
+    
+    if (choice == 0) {
+        // User cancelled
+        return;
+    } else if (choice == 1) {
+        // Upload
+        file_transfer->start_upload(filename);
+    } else if (choice == 2) {
+        // Download
+        file_transfer->request_download();
+    }
+}
+
+void VideoWindow::handle_file_transfer_update(const FileTransfer::TransferInfo& transfer) {
+    // This method is called when a file transfer status changes
+    // In a real implementation, you might want to show a progress dialog
+    
+    switch (transfer.state) {
+    case FileTransfer::TransferState::Pending:
+        fl_message("File transfer pending: %s", transfer.filename.c_str());
+        break;
+        
+    case FileTransfer::TransferState::InProgress:
+        {
+            // Calculate progress percentage
+            int progress = (transfer.size > 0) ? 
+                static_cast<int>((transfer.transferred * 100) / transfer.size) : 0;
+                
+            // In a real implementation, you would update a progress bar
+            // For simplicity, we'll just print a message for significant progress changes
+            if (progress % 25 == 0) {
+                fl_message("File transfer in progress: %d%%", progress);
+            }
+        }
+        break;
+        
+    case FileTransfer::TransferState::Completed:
+        fl_message("File transfer completed: %s", transfer.filename.c_str());
+        break;
+        
+    case FileTransfer::TransferState::Cancelled:
+        fl_message("File transfer cancelled: %s", transfer.filename.c_str());
+        break;
+        
+    case FileTransfer::TransferState::Failed:
+        fl_alert("File transfer failed: %s", transfer.filename.c_str());
+        break;
+    }
 }
 
 void VideoWindow::position_in_video(int x, int y, int& x_ret, int& y_ret) {

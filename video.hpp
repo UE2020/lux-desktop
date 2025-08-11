@@ -1,6 +1,7 @@
 #pragma once
 
 #include "connection.hpp"
+#include "file_transfer.hpp"
 #include "glib.hpp"
 #include "input.hpp"
 #include <FL/Fl.H>
@@ -30,6 +31,7 @@ protected:
 
     std::unique_ptr<RawMouseManager> mouse_manager;
     std::unique_ptr<KeyboardGrabManager> keyboard_grab_manager;
+    std::unique_ptr<FileTransfer> file_transfer;
 
     VideoInfo video_info;
     glib::Object<GstElement> video_pipeline;
@@ -40,6 +42,8 @@ protected:
     bool playing = false;
 
     static int system_event_handler(void* event, void* data);
+    void handle_file_transfer_update(const FileTransfer::TransferInfo& transfer);
+    void initiate_file_transfer();
 
 public:
     VideoWindow(int x, int y, int width, int height, ConnectionInfo conn_info);
